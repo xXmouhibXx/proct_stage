@@ -1,63 +1,83 @@
 class Service {
-  final String? id; // Nullable for creation
+  final int id;
   final String name;
   final String description;
-  final String location; // Stored as "lat,long" string
-  final String? proposedById; // For proposal creation
+  final double latitude;
+  final double longitude;
+  final int votes;
+  final String? ownerEmail;
+  final String? endDate;
+  final String? reservationLink;
+  final String? delegation;
+  final String? sector;
+  final String? provider;
+  final String? institution;
+  final String? category;
+  final double? averageRating;
+  final int? reviewCount;
 
   Service({
-    this.id,
+    required this.id,
     required this.name,
     required this.description,
-    required this.location,
-    this.proposedById,
+    required this.latitude,
+    required this.longitude,
+    this.votes = 0,
+    this.ownerEmail,
+    this.endDate,
+    this.reservationLink,
+    this.delegation,
+    this.sector,
+    this.provider,
+    this.institution,
+    this.category,
+    this.averageRating,
+    this.reviewCount,
   });
 
-  /// Getter for latitude
-  double get latitude {
-    final parts = location.split(',');
-    return double.tryParse(parts[0]) ?? 0.0;
-  }
-
-  /// Getter for longitude
-  double get longitude {
-    final parts = location.split(',');
-    return double.tryParse(parts.length > 1 ? parts[1] : '0.0') ?? 0.0;
-  }
-
-  /// Getter for both coordinates as a tuple
-  (double, double) get coordinates => (latitude, longitude);
-
-  // For regular service responses (without proposal info)
   factory Service.fromJson(Map<String, dynamic> json) {
+    // Parse location string "lat,lon"
+    List<String> locationParts = (json['location'] ?? '36.81,10.17').split(',');
+    double lat = double.tryParse(locationParts[0]) ?? 36.81;
+    double lon = double.tryParse(locationParts[1]) ?? 10.17;
+
     return Service(
-      id: json['id']?.toString(),
-      name: json['name'] ?? '',
-      description: json['description'] ?? '',
-      location: json['location'] ?? '0.0,0.0', // Default location
+      id: json['id'],
+      name: json['name'],
+      description: json['description'],
+      latitude: lat,
+      longitude: lon,
+      votes: json['votes'] ?? 0,
+      ownerEmail: json['ownerEmail'],
+      endDate: json['endDate']?.toString(),
+      reservationLink: json['reservationLink'],
+      delegation: json['delegation'],
+      sector: json['sector'],
+      provider: json['provider'],
+      institution: json['institution'],
+      category: json['category'],
+      averageRating: json['averageRating']?.toDouble(),
+      reviewCount: json['reviewCount'],
     );
   }
 
-  // For creating proposals (matches ServiceProposalDTO exactly)
-  Map<String, dynamic> toProposalJson() {
+  Map<String, dynamic> toJson() {
     return {
+      'id': id,
       'name': name,
       'description': description,
-      'location': location,
-      'proposedById': proposedById, // Set when creating proposals
+      'location': '$latitude,$longitude',
+      'votes': votes,
+      'ownerEmail': ownerEmail,
+      'endDate': endDate,
+      'reservationLink': reservationLink,
+      'delegation': delegation,
+      'sector': sector,
+      'provider': provider,
+      'institution': institution,
+      'category': category,
+      'averageRating': averageRating,
+      'reviewCount': reviewCount,
     };
-  }
-
-  // For general service updates
-  Map<String, dynamic> toJson() => toProposalJson(); // Same structure
-
-  // Helper to create a proposal-ready service
-  Service asProposal(String userId) {
-    return Service(
-      name: name,
-      description: description,
-      location: location,
-      proposedById: userId,
-    );
   }
 }
