@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import '../services/service_manager.dart';
 import '../utils/app_colors.dart';
 
@@ -32,6 +34,11 @@ class _ProposeServiceScreenState extends State<ProposeServiceScreen> {
   String? _selectedSector;
   String? _selectedCategory;
   String? _selectedInstitution;
+  
+  // NEW: Location selection variables
+  bool _useCurrentLocation = true;
+  LatLng? _selectedMapLocation;
+  final MapController _mapController = MapController();
   
   Map<String, List<String>> _sectors = {};
   Map<String, List<String>> _categories = {};
@@ -72,7 +79,7 @@ class _ProposeServiceScreenState extends State<ProposeServiceScreen> {
       'عين دراهم': ['عين دراهم المدينة', 'عين دراهم الأحواز', 'أولاد سدرة', 'العطاطفة', 'الحمران'],
       'فرنانة': ['فرنانة', 'وادي غريب', 'ربيعة', 'أولاد مفدة', 'القوايدية', 'بني مطير'],
       'غار الدماء': ['غار الدماء', 'غار الدماء الشمالية', 'المعدن', 'الرخاء', 'عين سلطان'],
-      'وادي مليز': ['واد مليز الشرقية', 'واد مليز الغريبة', 'الدخايلية', 'حكيم الشمالية', 'حكيم الجنوبية'],
+      'وادي مليز': ['واد مليز الشرقية', 'واد مليز الغربية', 'الدخايلية', 'حكيم الشمالية', 'حكيم الجنوبية'],
       'بلطة بوعوان': ['بلطة', 'عبد الجبار', 'بوعوان', 'وادي كساب', 'بولعابة']
     };
 
@@ -138,6 +145,213 @@ class _ProposeServiceScreenState extends State<ProposeServiceScreen> {
     }
   }
 
+  // NEW: Get coordinates for delegation
+  LatLng _getDelegationCoordinates() {
+    // Delegation center coordinates
+    final Map<String, LatLng> delegationCoords = {
+      'جندوبة': const LatLng(36.5019, 8.7802),
+      'جندوبة الشمالية': const LatLng(36.5334, 8.7621),
+      'بوسالم': const LatLng(36.6106, 8.9694),
+      'طبرقة': const LatLng(36.9544, 8.7574),
+      'عين دراهم': const LatLng(36.7756, 8.6883),
+      'فرنانة': const LatLng(36.6652, 8.8183),
+      'غار الدماء': const LatLng(36.4505, 8.4396),
+      'وادي مليز': const LatLng(36.4620, 8.3547),
+      'بلطة بوعوان': const LatLng(36.7236, 9.0842),
+    };
+    
+    // More specific sector coordinates (if available)
+    final Map<String, Map<String, LatLng>> sectorCoords = {
+      'جندوبة': {
+        'الزغايدة': const LatLng(36.5087, 8.7743),
+        'جندوبة الجنوبية': const LatLng(36.4951, 8.7861),
+        'النور': const LatLng(36.5056, 8.7789),
+        'السعادة': const LatLng(36.5123, 8.7698),
+        'الملقى': const LatLng(36.4989, 8.7923),
+        'التطور': const LatLng(36.5145, 8.7756),
+        'سوق السبت': const LatLng(36.4876, 8.7967),
+      },
+      'طبرقة': {
+        'طبرقة': const LatLng(36.9544, 8.7574),
+        'الريحان': const LatLng(36.9423, 8.7489),
+        'الحامدية': const LatLng(36.9678, 8.7623),
+        'الحمام': const LatLng(36.9589, 8.7701),
+        'عين الصبح': const LatLng(36.9367, 8.7812),
+        'الناظور': const LatLng(36.9712, 8.7456),
+        'ملولة': const LatLng(36.9234, 8.7234),
+      },
+      // Add more sectors as needed
+    };
+    
+    // Try to get sector-specific coordinates first
+    if (_selectedDelegation != null && _selectedSector != null) {
+      if (sectorCoords.containsKey(_selectedDelegation)) {
+        if (sectorCoords[_selectedDelegation]!.containsKey(_selectedSector)) {
+          return sectorCoords[_selectedDelegation]![_selectedSector]!;
+        }
+      }
+    }
+    
+    // Fall back to delegation coordinates
+    if (_selectedDelegation != null && delegationCoords.containsKey(_selectedDelegation)) {
+      return delegationCoords[_selectedDelegation]!;
+    }
+    
+    // Default to current location or Jendouba center
+    if (_currentLocation != null) {
+      List<String> parts = _currentLocation!.split(',');
+      return LatLng(double.parse(parts[0]), double.parse(parts[1]));
+    }
+    
+    return const LatLng(36.5019, 8.7802); // Default Jendouba
+  }
+
+  // NEW: Method to show map for location selection
+  void _showMapPicker() {
+    // Get appropriate center based on selected delegation/sector
+    LatLng mapCenter = _getDelegationCoordinates();
+    
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.8,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        builder: (_, controller) => Container(
+          decoration: BoxDecoration(
+            color: AppColors.backgroundWhite,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(25)),
+          ),
+          child: Column(
+            children: [
+              // Handle bar
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(top: 12, bottom: 16),
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              
+              // Title
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'اختر موقع الخدمة',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          if (_selectedDelegation != null || _selectedSector != null)
+                            Text(
+                              '${_selectedDelegation ?? ''} ${_selectedSector != null ? '- $_selectedSector' : ''}',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: AppColors.textLight,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+              ),
+              
+              // Map
+              Expanded(
+                child: Stack(
+                  children: [
+                    FlutterMap(
+                      mapController: _mapController,
+                      options: MapOptions(
+                        initialCenter: _selectedMapLocation ?? mapCenter,
+                        initialZoom: _selectedSector != null ? 15.0 : 13.0, // Zoom more if sector selected
+                        onTap: (tapPosition, latLng) {
+                          setState(() {
+                            _selectedMapLocation = latLng;
+                          });
+                          Navigator.pop(context);
+                        },
+                      ),
+                      children: [
+                        TileLayer(
+                          urlTemplate: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                          subdomains: const ['a', 'b', 'c'],
+                        ),
+                        if (_selectedMapLocation != null)
+                          MarkerLayer(
+                            markers: [
+                              Marker(
+                                point: _selectedMapLocation!,
+                                width: 60,
+                                height: 60,
+                                child: const Icon(
+                                  Icons.location_on,
+                                  color: AppColors.primaryBlue,
+                                  size: 40,
+                                ),
+                              ),
+                            ],
+                          ),
+                      ],
+                    ),
+                    
+                    // Center indicator
+                    if (_selectedMapLocation == null)
+                      const Center(
+                        child: Icon(
+                          Icons.add_location,
+                          size: 40,
+                          color: AppColors.primaryBlue,
+                        ),
+                      ),
+                    
+                    // Instructions
+                    Positioned(
+                      top: 10,
+                      left: 20,
+                      right: 20,
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.9),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          _selectedDelegation != null 
+                            ? 'انقر على الخريطة لتحديد موقع الخدمة في ${_selectedDelegation}'
+                            : 'انقر على الخريطة لتحديد موقع الخدمة',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _selectDate(BuildContext context) async {
     final DateTime? picked = await showDatePicker(
       context: context,
@@ -155,6 +369,20 @@ class _ProposeServiceScreenState extends State<ProposeServiceScreen> {
   Future<void> _submitService() async {
     if (!_formKey.currentState!.validate()) return;
 
+    // NEW: Determine final location based on selection
+    String finalLocation;
+    if (_useCurrentLocation) {
+      finalLocation = _currentLocation ?? "36.8065,10.1815";
+    } else {
+      if (_selectedMapLocation == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('الرجاء تحديد موقع على الخريطة')),
+        );
+        return;
+      }
+      finalLocation = "${_selectedMapLocation!.latitude},${_selectedMapLocation!.longitude}";
+    }
+
     setState(() => _isLoading = true);
 
     try {
@@ -169,7 +397,7 @@ class _ProposeServiceScreenState extends State<ProposeServiceScreen> {
         name: _nameController.text.trim(),
         description: _descriptionController.text.trim(),
         price: price,
-        location: _currentLocation ?? "36.8065,10.1815",
+        location: finalLocation, // Use determined location
         ownerEmail: _ownerEmailController.text.trim(),
         endDate: _endDate,
         reservationLink: _reservationLinkController.text.trim(),
@@ -408,38 +636,104 @@ class _ProposeServiceScreenState extends State<ProposeServiceScreen> {
                 const SizedBox(height: 16),
               ],
               
-              // Location indicator
+              // NEW: Location selection section
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   color: AppColors.primaryBlue.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(Icons.location_on, 
-                      color: AppColors.primaryBlue),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        _currentLocation != null 
-                          ? 'سيتم إضافة الخدمة في موقعك الحالي'
-                          : 'جاري تحديد موقعك...',
-                        style: TextStyle(
-                          color: AppColors.textDark,
-                          fontSize: 14,
-                        ),
+                    const Text(
+                      'موقع الخدمة',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textDark,
                       ),
                     ),
-                    if (_currentLocation == null)
-                      const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(AppColors.primaryBlue),
+                    const SizedBox(height: 12),
+                    
+                    // Location option 1: Current location
+                    RadioListTile<bool>(
+                      title: Row(
+                        children: [
+                          const Icon(Icons.my_location, 
+                            color: AppColors.primaryBlue,
+                            size: 20),
+                          const SizedBox(width: 8),
+                          const Text('استخدام موقعي الحالي'),
+                        ],
+                      ),
+                      subtitle: _currentLocation != null 
+                        ? const Text('تم تحديد موقعك',
+                            style: TextStyle(color: AppColors.successColor, fontSize: 12))
+                        : const Text('جاري تحديد موقعك...',
+                            style: TextStyle(fontSize: 12)),
+                      value: true,
+                      groupValue: _useCurrentLocation,
+                      onChanged: (value) {
+                        setState(() {
+                          _useCurrentLocation = value!;
+                        });
+                      },
+                      activeColor: AppColors.primaryBlue,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                    
+                    // Location option 2: Select on map
+                    RadioListTile<bool>(
+                      title: Row(
+                        children: [
+                          const Icon(Icons.location_on, 
+                            color: AppColors.accentYellow,
+                            size: 20),
+                          const SizedBox(width: 8),
+                          const Text('تحديد موقع على الخريطة'),
+                        ],
+                      ),
+                      subtitle: _selectedMapLocation != null
+                        ? Text('تم تحديد الموقع: ${_selectedMapLocation!.latitude.toStringAsFixed(4)}, ${_selectedMapLocation!.longitude.toStringAsFixed(4)}',
+                            style: const TextStyle(color: AppColors.successColor, fontSize: 12))
+                        : const Text('انقر لفتح الخريطة',
+                            style: TextStyle(fontSize: 12)),
+                      value: false,
+                      groupValue: _useCurrentLocation,
+                      onChanged: (value) {
+                        setState(() {
+                          _useCurrentLocation = value!;
+                          if (!_useCurrentLocation) {
+                            _showMapPicker();
+                          }
+                        });
+                      },
+                      activeColor: AppColors.primaryBlue,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                    
+                    // Map button if map option is selected
+                    if (!_useCurrentLocation) ...[
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: _showMapPicker,
+                          icon: const Icon(Icons.map),
+                          label: Text(_selectedMapLocation != null 
+                            ? 'تغيير الموقع' 
+                            : 'فتح الخريطة'),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            side: const BorderSide(color: AppColors.primaryBlue),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
                         ),
                       ),
+                    ],
                   ],
                 ),
               ),
@@ -587,6 +881,7 @@ class _ProposeServiceScreenState extends State<ProposeServiceScreen> {
     _ownerEmailController.dispose();
     _reservationLinkController.dispose();
     _providerController.dispose();
+    _mapController.dispose(); 
     super.dispose();
   }
 }
